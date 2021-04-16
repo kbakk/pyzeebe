@@ -1,8 +1,8 @@
-name: Publish pyzeebe
+name: Publish pyzeebe - internal repository
 
 on:
-  release:
-    types: [created]
+  push:
+    tags: ['v*']
 
 jobs:
   publish:
@@ -18,11 +18,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools wheel twine
+          pip install setuptools wheel cloudsmith-cli
       - name: Build and publish
-        env:
-          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
           python setup.py sdist bdist_wheel
-          twine upload dist/*
+          python -m cloudsmith_cli upload python $PYPI_PRIVATE_REPO dist/pyzeebe-*-py3-none-any.whl --without-rate-limit
+        env:
+         CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
+         PYPI_PRIVATE_REPO: nepms/python-production
