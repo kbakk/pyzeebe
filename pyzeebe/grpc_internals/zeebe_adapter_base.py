@@ -23,7 +23,7 @@ class ZeebeAdapterBase(object):
         self.secure_connection = secure_connection
         self.connected = False
         self.retrying_connection = True
-        self._channel.subscribe(self._check_connectivity, try_to_connect=True)
+        self._channel.subscribe(callback=self._on_connectivity_change, try_to_connect=True)
         self._gateway_stub = GatewayStub(self._channel)
         self._max_connection_retries = max_connection_retries
         self._current_connection_retries = 0
@@ -47,7 +47,7 @@ class ZeebeAdapterBase(object):
         else:
             return grpc.insecure_channel(connection_uri)
 
-    def _check_connectivity(self, value: grpc.ChannelConnectivity) -> None:
+    def _on_connectivity_change(self, value: grpc.ChannelConnectivity) -> None:
         logger.debug(f"Grpc channel connectivity changed to: {value}")
         self.connected = False
 

@@ -14,26 +14,26 @@ from tests.unit.utils.random_utils import RANDOM_RANGE
 
 
 def test_connectivity_ready(zeebe_adapter):
-    zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.READY)
+    zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.READY)
     assert not zeebe_adapter.retrying_connection
     assert zeebe_adapter.connected
 
 
 def test_connectivity_transient_idle(zeebe_adapter):
-    zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.IDLE)
+    zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.IDLE)
     assert not zeebe_adapter.retrying_connection
     assert zeebe_adapter.connected
 
 
 def test_connectivity_connecting(zeebe_adapter):
-    zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.CONNECTING)
+    zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.CONNECTING)
     assert zeebe_adapter.retrying_connection
     assert not zeebe_adapter.connected
 
 
 def test_connectivity_transient_failure_retry(zeebe_adapter):
     zeebe_adapter._max_connection_retries = 1
-    zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.TRANSIENT_FAILURE)
+    zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.TRANSIENT_FAILURE)
     assert zeebe_adapter.retrying_connection
     assert not zeebe_adapter.connected
 
@@ -42,12 +42,12 @@ def test_connectivity_transient_failure_no_retry(zeebe_adapter):
     zeebe_adapter._max_connection_retries = 0
     zeebe_adapter._channel.close = MagicMock()
     with pytest.raises(ConnectionAbortedError):
-        zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.TRANSIENT_FAILURE)
+        zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.TRANSIENT_FAILURE)
         zeebe_adapter._channel.close.assert_called_once()
 
 
 def test_connectivity_transient_failure_logs_warning(caplog, zeebe_adapter):
-    zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.TRANSIENT_FAILURE)
+    zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.TRANSIENT_FAILURE)
     expected_logger = "pyzeebe.grpc_internals.zeebe_adapter_base"
     expected_level = "WARNING"
     matching_logs = [
@@ -59,7 +59,7 @@ def test_connectivity_transient_failure_logs_warning(caplog, zeebe_adapter):
 
 
 def test_connectivity_shutdown(zeebe_adapter):
-    zeebe_adapter._check_connectivity(grpc.ChannelConnectivity.SHUTDOWN)
+    zeebe_adapter._on_connectivity_change(grpc.ChannelConnectivity.SHUTDOWN)
     assert not zeebe_adapter.connected
     assert not zeebe_adapter.retrying_connection
 
