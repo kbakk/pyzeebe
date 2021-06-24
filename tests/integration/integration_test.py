@@ -44,7 +44,7 @@ def setup(zeebe_worker, zeebe_client):
 
     yield
     zeebe_worker.stop(wait=True)
-    assert not zeebe_worker._watcher_thread.is_alive()
+    assert not zeebe_worker._task_watcher_thread.is_alive()
 
 
 def test_run_workflow(zeebe_client: ZeebeClient):

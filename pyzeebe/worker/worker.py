@@ -6,6 +6,7 @@ from typing import List, Generator, Dict
 
 from pyzeebe import TaskDecorator
 from pyzeebe.credentials.base_credentials import BaseCredentials
+from pyzeebe.errors import ZeebeGatewayUnavailableError
 from pyzeebe.errors.pyzeebe_errors import MaxConsecutiveTaskThreadError
 from pyzeebe.grpc_internals.zeebe_adapter import ZeebeAdapter
 from pyzeebe.job.job import Job
@@ -45,7 +46,8 @@ class ZeebeWorker(ZeebeTaskRouter):
         self.stop_event = Event()
         self._task_threads: Dict[str, Thread] = {}
         self.watcher_max_errors_factor = watcher_max_errors_factor
-        self._watcher_thread = None
+        self._task_watcher_thread = None
+        self._zeebe_connectivity_watcher_thread = None
         self.max_task_count = max_task_count
         self._task_state = TaskState()
 
@@ -68,7 +70,7 @@ class ZeebeWorker(ZeebeTaskRouter):
             self._task_threads[task.type] = task_thread
 
         if watch:
-            self._start_watcher_thread()
+            self._start_watcher_threads()
 
     def _start_task_thread(self, task: Task) -> Thread:
         if self.stop_event.is_set():
@@ -80,10 +82,14 @@ class ZeebeWorker(ZeebeTaskRouter):
         task_thread.start()
         return task_thread
 
-    def _start_watcher_thread(self):
-        self._watcher_thread = Thread(target=self._watch_task_threads,
-                                      name=f"{self.__class__.__name__}-Watch")
-        self._watcher_thread.start()
+    def _start_watcher_threads(self):
+        self._zeebe_connectivity_watcher_thread = Thread(target=self._watch_zeebe_connectivity,
+                                                         name=f"{self.__class__.__name__}-ConnectivityWatch")
+        self._task_watcher_thread = Thread(target=self._watch_task_threads,
+                                           name=f"{self.__class__.__name__}-TaskWatch")
+
+        self._zeebe_connectivity_watcher_thread.start()
+        self._task_watcher_thread.start()
 
     def stop(self, wait: bool = False) -> None:
         """
@@ -103,18 +109,41 @@ class ZeebeWorker(ZeebeTaskRouter):
             thread.join()
         logger.debug("All threads joined")
 
+    def _watch_zeebe_connectivity(self, frequency: int = 10, max_retry_connect=6) -> None:
+        logger.debug("[ConnectivityWatch] starting connectivity watch")
+        counter = 0
+        prev_state = object()  # sentinel at init
+        while self._should_watch_threads():
+            current_state = self.zeebe_adapter.connectivity
+            if self.zeebe_adapter.retrying_connection:
+                logger.debug(f"[ConnectivityWatch] Zeebe adapter in retrying state ({current_state}) (repeated {counter} times)")
+                if current_state == prev_state:
+                    counter += 1
+                    if counter >= max_retry_connect:
+                        logger.debug("[ConnectivityWatch] Stopping worker due to gateway connectivity issue")
+                        self.stop()
+                        raise ZeebeGatewayUnavailableError(f"While trying to establish gateway connection, "
+                                                           f"state was found stuck in {current_state}")
+            else:
+                counter = 0
+                logger.debug(f"[ConnectivityWatch] Zeebe adapter in non-connectting state ({current_state})")
+            prev_state = current_state
+            time.sleep(frequency)
+        logger.info(f"[ConnectivityWatch] stopping (stop_event={self.stop_event.is_set()}, "
+                    f"task_threads list lenght={len(self._task_threads)})")
+
     def _watch_task_threads(self, frequency: int = 10) -> None:
-        logger.debug("Starting task thread watch")
+        logger.debug("[TaskWatch] Starting task thread watch")
         try:
             self._watch_task_threads_runner(frequency)
         except Exception as err:
             if isinstance(err, MaxConsecutiveTaskThreadError):
-                logger.debug("Stopping worker due to too many errors.")
+                logger.debug("[TaskWatch] Stopping worker due to too many errors.")
             else:
-                logger.debug("An unhandled exception occured when watching threads, stopping worker")
+                logger.debug("[TaskWatch] An unhandled exception occured when watching threads, stopping worker")
             self.stop()
             raise
-        logger.info(f"Watcher stopping (stop_event={self.stop_event.is_set()}, "
+        logger.info(f"[TaskWatch] Task thread watcher stopping (stop_event={self.stop_event.is_set()}, "
                     f"task_threads list lenght={len(self._task_threads)})")
 
     def _should_handle_task(self) -> bool:
@@ -126,7 +155,7 @@ class ZeebeWorker(ZeebeTaskRouter):
     def _watch_task_threads_runner(self, frequency: int = 10) -> None:
         consecutive_errors = {}
         while self._should_watch_threads():
-            logger.debug("Checking task thread status")
+            logger.debug("[TaskWatch] Checking task thread status")
             # converting to list to avoid "RuntimeError: dictionary changed size during iteration"
             for task_type in list(self._task_threads.keys()):
                 consecutive_errors.setdefault(task_type, 0)
@@ -143,10 +172,10 @@ class ZeebeWorker(ZeebeTaskRouter):
 
     def _handle_not_alive_thread(self, task_type: str):
         if self._should_handle_task():
-            logger.warning(f"Task thread {task_type} is not alive, restarting")
+            logger.warning(f"[TaskWatch] Task thread {task_type} is not alive, restarting")
             self._restart_task_thread(task_type)
         else:
-            logger.warning(f"Task thread {task_type} is not alive, but condition not met for restarting")
+            logger.warning(f"[TaskWatch] Task thread {task_type} is not alive, but condition not met for restarting")
 
     def _check_max_errors(self, consecutive_errors: int, task_type: str):
         if consecutive_errors >= self.watcher_max_errors_factor:
