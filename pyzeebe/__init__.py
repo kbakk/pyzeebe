@@ -1,4 +1,4 @@
-__version__ = "2+maintenance.2"
+__version__ = "2+maintenance.3.dev.1"
 
 from pyzeebe import errors
 from pyzeebe.client.client import ZeebeClient
