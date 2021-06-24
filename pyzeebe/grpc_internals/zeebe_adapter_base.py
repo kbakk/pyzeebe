@@ -21,6 +21,7 @@ class ZeebeAdapterBase(object):
             self._channel = self._create_channel(self.connection_uri, credentials, secure_connection)
 
         self.secure_connection = secure_connection
+        self.connectivity = None
         self.connected = False
         self.retrying_connection = True
         self._channel.subscribe(callback=self._on_connectivity_change, try_to_connect=True)
@@ -49,6 +50,7 @@ class ZeebeAdapterBase(object):
 
     def _on_connectivity_change(self, value: grpc.ChannelConnectivity) -> None:
         logger.debug(f"Grpc channel connectivity changed to: {value}")
+        self.connectivity = value
 
         if value in [grpc.ChannelConnectivity.READY, grpc.ChannelConnectivity.IDLE]:
             logger.debug(f"Connected to {self.connection_uri or 'zeebe'}")
