@@ -26,7 +26,7 @@ copyright = '2020, Jonatan Martens'
 author = 'Jonatan Martens'
 
 # The full version, including alpha/beta/rc tags
-release = '2+maintenance.2'
+release = '2+maintenance.3.dev.2'
 
 # -- General configuration ---------------------------------------------------
 
