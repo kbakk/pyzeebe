@@ -1,7 +1,9 @@
 import asyncio
 import logging
 import socket
-from typing import List
+from typing import List, Optional
+
+from grpc import Channel
 
 from pyzeebe import TaskDecorator
 from pyzeebe.credentials.base_credentials import BaseCredentials
@@ -47,6 +49,15 @@ class ZeebeWorker(ZeebeTaskRouter):
         self._job_pollers: List[JobPoller] = []
         self._job_executors: List[JobExecutor] = []
 
+    async def connect(self, channel: Optional[Channel] = None) -> None:
+        """
+        Set up connection to Zeebe.
+
+        Args:
+            channel (Channel): Channel to use to connect to cluster.
+        """
+        self.zeebe_adapter.connect(channel=channel)
+
     async def work(self) -> None:
         """
         Start the worker. The worker will poll zeebe for jobs of each task in a different thread.
@@ -58,7 +69,8 @@ class ZeebeWorker(ZeebeTaskRouter):
             ZeebeInternalError: If Zeebe experiences an internal error
 
         """
-        self.zeebe_adapter.connect()
+        if not self.zeebe_adapter.connected:
+            await self.connect()
         self._job_executors, self._job_pollers = [], []
 
         for task in self.tasks:
